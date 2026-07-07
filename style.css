@@ -131,12 +131,21 @@ body {
 .field input {
   width: 100%;
   min-width: 0; /* 枠を超えて広がって隣に重なるのを防ぐ */
+  max-width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg);
   color: var(--text);
   font-size: 1rem;
+  -webkit-appearance: none; /* iOS独自の見た目をやめ、枠からのはみ出しを防ぐ */
+  appearance: none;
+}
+/* iOSの日付入力が枠を超えないように */
+.field input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 42px; /* 見た目の高さを他の欄とそろえる */
 }
 .field input:focus {
   outline: none;

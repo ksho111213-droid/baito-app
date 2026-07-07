@@ -2,7 +2,7 @@
 // オフライン(電波なし)でも起動できるようにする。
 // ファイルを更新したら下の CACHE_VERSION の数字を上げること。
 
-const CACHE_VERSION = "baito-v1";
+const CACHE_VERSION = "baito-v2";
 const ASSETS = [
   "./",
   "./index.html",
