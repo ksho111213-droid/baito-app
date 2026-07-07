@@ -130,6 +130,7 @@ body {
 }
 .field input {
   width: 100%;
+  min-width: 0; /* 枠を超えて広がって隣に重なるのを防ぐ */
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -146,10 +147,16 @@ body {
   align-items: center;
   gap: 6px;
 }
-.time-inputs input { width: 100%; }
+.time-inputs input { width: 100%; min-width: 0; }
 .time-inputs span {
   color: var(--text-muted);
   font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+/* 狭い画面(スマホ)ではフォームを1列にして各欄を広く使う */
+@media (max-width: 480px) {
+  .form-grid { grid-template-columns: 1fr; }
 }
 
 .btn-primary {
