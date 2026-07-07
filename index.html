@@ -33,6 +33,13 @@
 <script>
   // サービスワーカーを登録(オフライン起動のため)
   if ("serviceWorker" in navigator) {
+    // 新しいバージョンに切り替わったら自動で1回だけ再読み込みして最新表示にする
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("sw.js").catch((e) => console.warn("SW登録失敗:", e));
     });
