@@ -115,13 +115,14 @@ body {
 /* --- フォーム --- */
 .form-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
 .field {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0; /* 中の入力(特に日付)に押されて枠外へあふれるのを防ぐ */
 }
 .field.full { grid-column: 1 / -1; }
 .field label {
@@ -165,7 +166,7 @@ body {
 
 /* 狭い画面(スマホ)ではフォームを1列にして各欄を広く使う */
 @media (max-width: 480px) {
-  .form-grid { grid-template-columns: 1fr; }
+  .form-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 .btn-primary {
