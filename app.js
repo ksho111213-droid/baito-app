@@ -25,7 +25,8 @@ function saveSettings(s) {
 function loadEntries() {
   try {
     const arr = JSON.parse(localStorage.getItem(ENTRIES_KEY));
-    if (Array.isArray(arr)) return arr;
+    // date形式が壊れた記録が混ざっていても、他の記録は読み込めるように除外する
+    if (Array.isArray(arr)) return arr.filter(e => e && /^\d{4}-\d{2}-\d{2}$/.test(e.date));
   } catch (e) { /* ignore */ }
   return [];
 }
@@ -35,6 +36,13 @@ function saveEntries(arr) {
 
 let settings = loadSettings();
 let entries = loadEntries();
+
+// 別タブ/別ウィンドウでの変更を取り込む(片方の記録が消えるのを防ぐ)
+window.addEventListener("storage", (ev) => {
+  if (ev.key === ENTRIES_KEY) entries = loadEntries();
+  if (ev.key === SETTINGS_KEY) settings = loadSettings();
+  if (ev.key === ENTRIES_KEY || ev.key === SETTINGS_KEY) render();
+});
 
 // ---- 計算ヘルパー ----
 // 労働分の金額(交通費を除く)。円未満は四捨五入。
@@ -59,6 +67,10 @@ function todayStr() {
 function yen(n) {
   return "¥" + Math.round(n).toLocaleString("ja-JP");
 }
+// 日付の新しい順に並び替える(同じ日付は元の順序を保つ)
+function sortByDateDesc(list) {
+  return list.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+}
 // 分 → "◯時間◯分"(0分なら「◯時間」など読みやすく)
 function minutesToText(min) {
   const h = Math.floor(min / 60);
@@ -71,7 +83,28 @@ function minutesToText(min) {
 // ---- 画面描画 ----
 const app = document.getElementById("app");
 
+const FORM_FIELD_IDS = ["f-date", "f-hours", "f-mins", "f-wage", "f-transport"];
+
+// 削除など他の操作で再描画が起きても、入力中の勤務記録フォームの内容を保つ
+function captureFormState() {
+  const form = document.getElementById("entryForm");
+  if (!form) return null;
+  const state = {};
+  for (const id of FORM_FIELD_IDS) state[id] = form.querySelector("#" + id)?.value ?? "";
+  return state;
+}
+function restoreFormState(state) {
+  if (!state) return;
+  const form = document.getElementById("entryForm");
+  if (!form) return;
+  for (const id of FORM_FIELD_IDS) {
+    const input = form.querySelector("#" + id);
+    if (input && state[id]) input.value = state[id];
+  }
+}
+
 function render() {
+  const formState = captureFormState();
   const thisMonth = monthOf(todayStr());
   app.innerHTML = "";
   app.appendChild(renderSummary(thisMonth));
@@ -79,6 +112,7 @@ function render() {
   app.appendChild(renderMonthEntries(thisMonth));
   app.appendChild(renderHistory(thisMonth));
   app.appendChild(renderSettings());
+  restoreFormState(formState);
 }
 
 // 今月の合計カード
@@ -163,6 +197,7 @@ function addEntryFromForm(form) {
   if (!date) { alert("日付を入力してください。"); return; }
   if (minutes <= 0) { alert("働いた時間を入力してください。"); return; }
   if (wage <= 0) { alert("時給を入力してください。"); return; }
+  if (transport < 0) { alert("交通費は0円以上を入力してください。"); return; }
 
   entries.push({
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
@@ -175,6 +210,10 @@ function addEntryFromForm(form) {
   settings.defaultTransport = transport;
   saveSettings(settings);
 
+  // 次の入力のため、時間欄だけ空にしておく(render()が現在の入力値を復元するため)
+  form.querySelector("#f-hours").value = "";
+  form.querySelector("#f-mins").value = "";
+
   render();
 }
 
@@ -185,9 +224,7 @@ function renderMonthEntries(thisMonth) {
   h.textContent = "今月の記録";
   card.appendChild(h);
 
-  const list = entries
-    .filter(e => monthOf(e.date) === thisMonth)
-    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const list = sortByDateDesc(entries.filter(e => monthOf(e.date) === thisMonth));
 
   if (list.length === 0) {
     const p = el("p", "empty");
@@ -252,9 +289,7 @@ function renderHistory(thisMonth) {
   }
 
   for (const m of months) {
-    const monthEntries = entries
-      .filter(e => monthOf(e.date) === m)
-      .sort((a, b) => (a.date < b.date ? 1 : -1));
+    const monthEntries = sortByDateDesc(entries.filter(e => monthOf(e.date) === m));
     const total = monthEntries.reduce((s, e) => s + totalPay(e), 0);
     const days = new Set(monthEntries.map(e => e.date)).size;
     const [y, mm] = m.split("-");
@@ -288,12 +323,15 @@ function renderSettings() {
 
   card.querySelector("#s-save").addEventListener("click", () => {
     const v = parseInt(card.querySelector("#s-transport").value, 10) || 0;
+    if (v < 0) { alert("交通費は0円以上を入力してください。"); return; }
     settings.defaultTransport = v;
     saveSettings(settings);
     const note = card.querySelector("#s-note");
     note.textContent = "保存しました(次に勤務を記録するときの初期値になります)";
-    // フォームの交通費欄も更新するため再描画
-    setTimeout(render, 900);
+    // 表示中の勤務記録フォームがあれば、その場で新しい既定値を反映する
+    // (画面全体を再描画すると、入力中の内容が消えてしまうため)
+    const transportInput = document.getElementById("f-transport");
+    if (transportInput) transportInput.value = v;
   });
   return card;
 }
