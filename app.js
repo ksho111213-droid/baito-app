@@ -14,10 +14,15 @@ function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem(SETTINGS_KEY));
     if (s && typeof s === "object") {
-      return { defaultTransport: Number(s.defaultTransport) || 0, lastWage: Number(s.lastWage) || 0 };
+      return {
+        defaultTransport: Number(s.defaultTransport) || 0,
+        lastWage: Number(s.lastWage) || 0,
+        lastDailyWage: Number(s.lastDailyWage) || 0,
+        lastPayType: s.lastPayType === "daily" ? "daily" : "hourly",
+      };
     }
   } catch (e) { /* 壊れていたら初期値へ */ }
-  return { defaultTransport: 0, lastWage: 0 };
+  return { defaultTransport: 0, lastWage: 0, lastDailyWage: 0, lastPayType: "hourly" };
 }
 function saveSettings(s) {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
@@ -26,7 +31,12 @@ function loadEntries() {
   try {
     const arr = JSON.parse(localStorage.getItem(ENTRIES_KEY));
     // date形式が壊れた記録が混ざっていても、他の記録は読み込めるように除外する
-    if (Array.isArray(arr)) return arr.filter(e => e && /^\d{4}-\d{2}-\d{2}$/.test(e.date));
+    if (Array.isArray(arr)) {
+      return arr
+        .filter(e => e && /^\d{4}-\d{2}-\d{2}$/.test(e.date))
+        // 日給機能を追加する前の記録にはpayTypeが無いため、時給扱いにする
+        .map(e => ({ payType: "hourly", dailyWage: 0, ...e }));
+    }
   } catch (e) { /* ignore */ }
   return [];
 }
@@ -47,6 +57,7 @@ window.addEventListener("storage", (ev) => {
 // ---- 計算ヘルパー ----
 // 労働分の金額(交通費を除く)。円未満は四捨五入。
 function laborPay(entry) {
+  if (entry.payType === "daily") return Math.round(Number(entry.dailyWage) || 0);
   return Math.round(entry.wage * entry.minutes / 60);
 }
 // 1件の合計(労働 + 交通費)
@@ -83,7 +94,7 @@ function minutesToText(min) {
 // ---- 画面描画 ----
 const app = document.getElementById("app");
 
-const FORM_FIELD_IDS = ["f-date", "f-hours", "f-mins", "f-wage", "f-transport"];
+const FORM_FIELD_IDS = ["f-date", "f-hours", "f-mins", "f-wage", "f-daily-wage", "f-transport"];
 
 // 削除など他の操作で再描画が起きても、入力中の勤務記録フォームの内容を保つ
 function captureFormState() {
@@ -91,6 +102,7 @@ function captureFormState() {
   if (!form) return null;
   const state = {};
   for (const id of FORM_FIELD_IDS) state[id] = form.querySelector("#" + id)?.value ?? "";
+  state.payType = form.querySelector('input[name="payType"]:checked')?.value ?? "";
   return state;
 }
 function restoreFormState(state) {
@@ -100,6 +112,14 @@ function restoreFormState(state) {
   for (const id of FORM_FIELD_IDS) {
     const input = form.querySelector("#" + id);
     if (input && state[id]) input.value = state[id];
+  }
+  // 選択中だった給与の種類(時給/日給)も復元し、表示切り替えを再適用する
+  if (state.payType) {
+    const radio = form.querySelector(`input[name="payType"][value="${state.payType}"]`);
+    if (radio) {
+      radio.checked = true;
+      applyPayTypeToForm(form);
+    }
   }
 }
 
@@ -149,12 +169,19 @@ function renderForm() {
     <h2>勤務を記録する</h2>
     <form id="entryForm">
       <div class="form-grid">
+        <div class="field full">
+          <label>給与の種類</label>
+          <div class="pay-type-toggle">
+            <label><input type="radio" name="payType" value="hourly"> 時給</label>
+            <label><input type="radio" name="payType" value="daily"> 日給</label>
+          </div>
+        </div>
         <div class="field">
           <label for="f-date">日付</label>
           <input type="date" id="f-date" required>
         </div>
         <div class="field">
-          <label>働いた時間</label>
+          <label id="f-hours-label">働いた時間</label>
           <div class="time-inputs">
             <input type="number" id="f-hours" min="0" step="1" placeholder="0" inputmode="numeric">
             <span>時間</span>
@@ -162,9 +189,13 @@ function renderForm() {
             <span>分</span>
           </div>
         </div>
-        <div class="field">
+        <div class="field" id="wage-field">
           <label for="f-wage">時給(円)</label>
-          <input type="number" id="f-wage" min="0" step="1" inputmode="numeric" required>
+          <input type="number" id="f-wage" min="0" step="1" inputmode="numeric">
+        </div>
+        <div class="field" id="daily-wage-field">
+          <label for="f-daily-wage">日給(円)</label>
+          <input type="number" id="f-daily-wage" min="0" step="1" inputmode="numeric">
         </div>
         <div class="field">
           <label for="f-transport">交通費(円)</label>
@@ -177,7 +208,15 @@ function renderForm() {
   const form = card.querySelector("#entryForm");
   form.querySelector("#f-date").value = todayStr();
   if (settings.lastWage) form.querySelector("#f-wage").value = settings.lastWage;
+  if (settings.lastDailyWage) form.querySelector("#f-daily-wage").value = settings.lastDailyWage;
   form.querySelector("#f-transport").value = settings.defaultTransport || 0;
+
+  const payTypeRadios = form.querySelectorAll('input[name="payType"]');
+  for (const radio of payTypeRadios) {
+    radio.checked = radio.value === settings.lastPayType;
+    radio.addEventListener("change", () => applyPayTypeToForm(form));
+  }
+  applyPayTypeToForm(form);
 
   form.addEventListener("submit", (ev) => {
     ev.preventDefault();
@@ -186,27 +225,49 @@ function renderForm() {
   return card;
 }
 
+// 選ばれた給与の種類(時給/日給)に合わせて、入力欄の表示・必須項目を切り替える
+function applyPayTypeToForm(form) {
+  const payType = form.querySelector('input[name="payType"]:checked')?.value || "hourly";
+  const isDaily = payType === "daily";
+  form.querySelector("#wage-field").style.display = isDaily ? "none" : "";
+  form.querySelector("#daily-wage-field").style.display = isDaily ? "" : "none";
+  form.querySelector("#f-wage").required = !isDaily;
+  form.querySelector("#f-daily-wage").required = isDaily;
+  form.querySelector("#f-hours-label").textContent = isDaily ? "働いた時間(任意)" : "働いた時間";
+}
+
 function addEntryFromForm(form) {
+  const payType = form.querySelector('input[name="payType"]:checked')?.value || "hourly";
   const date = form.querySelector("#f-date").value;
   const hours = parseInt(form.querySelector("#f-hours").value, 10) || 0;
   const mins = parseInt(form.querySelector("#f-mins").value, 10) || 0;
   const wage = parseInt(form.querySelector("#f-wage").value, 10) || 0;
+  const dailyWage = parseInt(form.querySelector("#f-daily-wage").value, 10) || 0;
   const transport = parseInt(form.querySelector("#f-transport").value, 10) || 0;
   const minutes = hours * 60 + mins;
 
   if (!date) { alert("日付を入力してください。"); return; }
-  if (minutes <= 0) { alert("働いた時間を入力してください。"); return; }
-  if (wage <= 0) { alert("時給を入力してください。"); return; }
+  if (payType === "hourly") {
+    // 時給: 金額×時間で計算するので、時間と時給が必須
+    if (minutes <= 0) { alert("働いた時間を入力してください。"); return; }
+    if (wage <= 0) { alert("時給を入力してください。"); return; }
+  } else {
+    // 日給: 固定額なので日給の金額だけ必須(時間は任意)
+    if (dailyWage <= 0) { alert("日給を入力してください。"); return; }
+    if (minutes < 0) { alert("働いた時間が正しくありません。"); return; }
+  }
   if (transport < 0) { alert("交通費は0円以上を入力してください。"); return; }
 
   entries.push({
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    date, minutes, wage, transport,
+    date, minutes, wage, dailyWage, payType, transport,
   });
   saveEntries(entries);
 
-  // 次回の初期表示用に、時給と交通費を覚えておく
-  settings.lastWage = wage;
+  // 次回の初期表示用に、選んだ種類と金額・交通費を覚えておく
+  settings.lastPayType = payType;
+  if (payType === "hourly") settings.lastWage = wage;
+  else settings.lastDailyWage = dailyWage;
   settings.defaultTransport = transport;
   saveSettings(settings);
 
@@ -243,7 +304,13 @@ function renderEntryRow(e) {
   date.textContent = formatDate(e.date);
   const detail = el("div", "detail");
   const transText = e.transport ? ` ・交通費${yen(e.transport)}` : "";
-  detail.textContent = `${minutesToText(e.minutes)} ・時給${yen(e.wage)}${transText}`;
+  if (e.payType === "daily") {
+    // 日給: 時間は任意入力なので、入力があるときだけ表示する
+    const timeText = e.minutes > 0 ? `${minutesToText(e.minutes)} ・` : "";
+    detail.textContent = `${timeText}日給${yen(e.dailyWage)}${transText}`;
+  } else {
+    detail.textContent = `${minutesToText(e.minutes)} ・時給${yen(e.wage)}${transText}`;
+  }
   info.appendChild(date);
   info.appendChild(detail);
 

@@ -169,6 +169,42 @@ body {
   .form-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* --- 時給/日給の切り替え --- */
+.pay-type-toggle {
+  display: flex;
+  gap: 8px;
+}
+.pay-type-toggle label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.pay-type-toggle label:has(input:checked) {
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+/* ラジオボタンには .field input の枠線・幅指定を効かせない */
+.pay-type-toggle input[type="radio"] {
+  width: auto;
+  min-width: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  accent-color: var(--primary);
+  margin: 0;
+  -webkit-appearance: radio;
+  appearance: auto;
+}
+
 .btn-primary {
   width: 100%;
   margin-top: 14px;
