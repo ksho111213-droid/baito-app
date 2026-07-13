@@ -118,8 +118,9 @@ function fmtTime(t) {
 }
 
 // 開始〜終了(15分刻み)の <option> を作る。夜勤対応は計算側で行う。
+// 先頭に未選択(空)の「時刻を選ぶ」を置き、新規入力は空から始める。
 function timeOptionsHTML(selected) {
-  let s = "";
+  let s = `<option value=""${!selected ? " selected" : ""}>時刻を選ぶ</option>`;
   for (let m = 0; m < 24 * 60; m += 15) {
     const v = minToTime(m);
     const label = `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
@@ -232,8 +233,8 @@ function renderForm() {
     date: editing.date,
     payType: editing.payType,
     inputMode: editing.inputMode || "duration",
-    start: editing.startTime || "09:00",
-    end: editing.endTime || "17:00",
+    start: editing.startTime || "",
+    end: editing.endTime || "",
     brk: editing.breakMinutes || 0,
     hours: Math.floor((editing.minutes || 0) / 60),
     mins: (editing.minutes || 0) % 60,
@@ -244,7 +245,7 @@ function renderForm() {
     date: todayStr(),
     payType: settings.lastPayType,
     inputMode: settings.lastInputMode,
-    start: "09:00", end: "17:00", brk: settings.defaultBreak || 0,
+    start: "", end: "", brk: settings.defaultBreak || 0,
     hours: 0, mins: 0,
     wage: settings.lastWage || "",
     dailyWage: settings.lastDailyWage || "",
@@ -384,10 +385,14 @@ function readForm(form) {
     startTime = form.querySelector("#f-start").value;
     endTime = form.querySelector("#f-end").value;
     breakMinutes = parseInt(form.querySelector("#f-break").value, 10) || 0;
-    let start = timeToMin(startTime);
-    let end = timeToMin(endTime);
-    if (end <= start) end += 24 * 60; // 夜勤: 終了が開始以前なら翌日とみなす
-    minutes = (end - start) - breakMinutes;
+    if (!startTime || !endTime) {
+      minutes = NaN; // 開始・終了のどちらか未選択(未入力)
+    } else {
+      let start = timeToMin(startTime);
+      let end = timeToMin(endTime);
+      if (end <= start) end += 24 * 60; // 夜勤: 終了が開始以前なら翌日とみなす
+      minutes = (end - start) - breakMinutes;
+    }
   } else {
     const hours = parseInt(form.querySelector("#f-hours").value, 10) || 0;
     const mins = parseInt(form.querySelector("#f-mins").value, 10) || 0;
@@ -402,6 +407,10 @@ function updatePreview(form) {
   if (!box) return;
   const r = readForm(form);
 
+  if (r.inputMode === "time" && Number.isNaN(r.minutes)) {
+    box.innerHTML = `<span class="hint">開始と終了の時刻を選ぶと、ここに計算結果が出ます。</span>`;
+    return;
+  }
   if (r.inputMode === "time" && r.minutes < 0) {
     box.innerHTML = `<span class="warn">休憩が勤務時間より長くなっています。</span>`;
     return;
@@ -432,6 +441,9 @@ function addEntryFromForm(form) {
   const r = readForm(form);
 
   if (!r.date) { alert("日付を入力してください。"); return; }
+  if (r.inputMode === "time" && (!r.startTime || !r.endTime)) {
+    alert("開始と終了の時刻を選んでください。"); return;
+  }
   if (r.inputMode === "time" && r.minutes < 0) {
     alert("休憩が勤務時間より長くなっています。時刻か休憩を見直してください。"); return;
   }
