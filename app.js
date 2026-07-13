@@ -4,6 +4,31 @@
 // バイト代 計算アプリ — データ管理・計算・画面描画
 // データはブラウザの localStorage(端末内の保存領域)に保存する。
 // サーバー不要でオフライン動作するが、別端末とは同期しない。
+//
+// ▼ このファイルの構成(上から順に)
+//   1. データ読み書き   … localStorage への保存・読込
+//   2. 計算ヘルパー      … 金額・時間・日付の計算や整形
+//   3. ホイール選択      … Googleマップ風の回転ホイール(buildWheel)
+//   4. 画面描画          … render() を起点に各カードを組み立てる
+//   5. フォーム処理      … 入力の読み取り・検証・追加/編集
+//
+// ▼ 記録1件(entry)の形 ※ localStorage の "baito.entries"(配列)に入る
+//   id:          文字列。記録を識別する一意なID(編集・削除で使う)
+//   date:        "YYYY-MM-DD"。勤務日
+//   payType:     "hourly"(時給) | "daily"(日給)
+//   inputMode:   "time"(時刻で入力) | "duration"(時間で入力)
+//   startTime:   "HH:MM"。時刻モードの開始(時間モードでは "")
+//   endTime:     "HH:MM"。時刻モードの終了(時間モードでは "")
+//   breakMinutes:数値。休憩(分)。時刻モードのみ。勤務時間から差し引く
+//   minutes:     数値。休憩を引いた実働(分)。時給の金額計算に使う
+//   wage:        数値。時給(円)
+//   dailyWage:   数値。日給(円)
+//   transport:   数値。交通費(円)
+//   ※ 昔の記録に無い項目は loadEntries() で既定値を補う(互換処理)
+//
+// ▼ 設定(settings) ※ localStorage の "baito.settings"
+//   defaultTransport / defaultBreak … フォームの初期値
+//   lastPayType / lastInputMode / lastWage / lastDailyWage … 前回値の記憶
 // =============================================================
 
 const SETTINGS_KEY = "baito.settings";

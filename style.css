@@ -176,7 +176,6 @@ body {
   align-items: center;
   gap: 8px;
 }
-.time-inputs select { width: auto; flex: 1; }
 .time-inputs .wheel { flex: 1; }
 .time-inputs span {
   color: var(--text-muted);
