@@ -117,39 +117,90 @@ function fmtTime(t) {
   return `${Number(h)}:${m}`;
 }
 
-// 開始〜終了(15分刻み)の <option> を作る。夜勤対応は計算側で行う。
-// 先頭に未選択(空)の「時刻を選ぶ」を置き、新規入力は空から始める。
-function timeOptionsHTML(selected) {
-  let s = `<option value=""${!selected ? " selected" : ""}>時刻を選ぶ</option>`;
+// ---- ホイール選択の候補({value, label} の配列) ----
+// 開始〜終了(15分刻み)。先頭に未選択(空)の「—」を置き、新規は未選択から始める。
+function timeWheelOptions() {
+  const opts = [{ value: "", label: "—" }];
   for (let m = 0; m < 24 * 60; m += 15) {
-    const v = minToTime(m);
-    const label = `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
-    s += `<option value="${v}"${v === selected ? " selected" : ""}>${label}</option>`;
+    opts.push({ value: minToTime(m), label: `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}` });
   }
-  return s;
+  return opts;
 }
-// 休憩(0〜4時間・15分刻み)の <option> を作る
+// 休憩(0〜4時間・15分刻み)
+function breakWheelOptions() {
+  const opts = [];
+  for (let m = 0; m <= 240; m += 15) opts.push({ value: m, label: m === 0 ? "なし" : minutesToText(m) });
+  return opts;
+}
+function hoursWheelOptions() {
+  const opts = [];
+  for (let h = 0; h <= 23; h++) opts.push({ value: h, label: String(h) });
+  return opts;
+}
+function minsWheelOptions() {
+  return [0, 15, 30, 45].map(m => ({ value: m, label: String(m) }));
+}
+// 設定画面の休憩(通常のプルダウン)用の <option>
 function breakOptionsHTML(selected) {
-  let s = "";
-  for (let m = 0; m <= 240; m += 15) {
-    const label = m === 0 ? "なし" : minutesToText(m);
-    s += `<option value="${m}"${m === selected ? " selected" : ""}>${label}</option>`;
-  }
-  return s;
+  return breakWheelOptions()
+    .map(o => `<option value="${o.value}"${o.value === selected ? " selected" : ""}>${o.label}</option>`)
+    .join("");
 }
-function hoursOptionsHTML(selected) {
-  let s = "";
-  for (let h = 0; h <= 23; h++) {
-    s += `<option value="${h}"${h === selected ? " selected" : ""}>${h}</option>`;
+
+// Googleマップ風の回転ホイールを作る。
+//   container: 表示先の要素 / hidden: 値を保持する input / options: {value,label}[] / initial: 初期値
+// スクロールで回り、中央の帯にある値が選択値になる。値は hidden に入れ、input イベントを発火する。
+const WHEEL_ITEM_H = 34; // 1項目の高さ(px)。CSSと合わせる
+function buildWheel(container, hidden, options, initial) {
+  container.classList.add("wheel");
+  const scroll = document.createElement("div");
+  scroll.className = "wheel-scroll";
+  options.forEach((o, i) => {
+    const it = document.createElement("div");
+    it.className = "wheel-item";
+    it.textContent = o.label;
+    it.dataset.index = i;
+    it.addEventListener("click", () => scrollToIndex(i, true));
+    scroll.appendChild(it);
+  });
+  const hl = document.createElement("div");
+  hl.className = "wheel-highlight";
+  container.appendChild(scroll);
+  container.appendChild(hl);
+
+  let idx = options.findIndex(o => String(o.value) === String(initial));
+  if (idx < 0) idx = 0;
+
+  function markCenter(i) {
+    for (const el of scroll.children) el.classList.toggle("is-center", Number(el.dataset.index) === i);
   }
-  return s;
-}
-function minsOptionsHTML(selected) {
-  let s = "";
-  for (const m of [0, 15, 30, 45]) {
-    s += `<option value="${m}"${m === selected ? " selected" : ""}>${m}</option>`;
+  function clampIndex(i) { return Math.min(Math.max(i, 0), options.length - 1); }
+  function scrollToIndex(i, smooth) {
+    scroll.scrollTo({ top: i * WHEEL_ITEM_H, behavior: smooth ? "smooth" : "auto" });
   }
-  return s;
+  function commit(i, silent) {
+    idx = i;
+    hidden.value = options[i].value;
+    markCenter(i);
+    if (!silent) hidden.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  let settle;
+  scroll.addEventListener("scroll", () => {
+    clearTimeout(settle);
+    markCenter(clampIndex(Math.round(scroll.scrollTop / WHEEL_ITEM_H)));
+    settle = setTimeout(() => commit(clampIndex(Math.round(scroll.scrollTop / WHEEL_ITEM_H))), 130);
+  });
+
+  commit(idx, true); // 初期値をセット(イベントは出さない)
+  container._reposition = () => requestAnimationFrame(() => scrollToIndex(idx, false));
+  container._setValue = (val) => {
+    let i = options.findIndex(o => String(o.value) === String(val));
+    if (i < 0) i = 0;
+    commit(i, true);
+    requestAnimationFrame(() => scrollToIndex(i, false));
+  };
+  container._reposition();
 }
 
 // ---- 画面描画 ----
@@ -171,9 +222,16 @@ function restoreFormState(state) {
   if (!state) return;
   const form = document.getElementById("entryForm");
   if (!form) return;
+  // ホイールで選ぶ欄は、値を戻すだけでなくホイールの位置も合わせ直す
+  const WHEEL_IDS = ["f-start", "f-end", "f-break", "f-hours", "f-mins"];
   for (const id of FORM_FIELD_IDS) {
-    const input = form.querySelector("#" + id);
-    if (input && state[id]) input.value = state[id];
+    if (WHEEL_IDS.includes(id)) {
+      const w = form.querySelector("#wheel-" + id);
+      if (w && w._setValue) w._setValue(state[id]);
+    } else {
+      const input = form.querySelector("#" + id);
+      if (input && state[id]) input.value = state[id];
+    }
   }
   // 選択中だった給与の種類・入力方法も復元し、表示切り替えを再適用する
   const payRadio = state.payType && form.querySelector(`input[name="payType"][value="${state.payType}"]`);
@@ -278,26 +336,31 @@ function renderForm() {
         </div>
 
         <div class="field" id="time-start-field">
-          <label for="f-start">開始</label>
-          <select id="f-start">${timeOptionsHTML(v.start)}</select>
+          <label>開始</label>
+          <div class="wheel" id="wheel-f-start"></div>
+          <input type="hidden" id="f-start">
         </div>
         <div class="field" id="time-end-field">
-          <label for="f-end">終了</label>
-          <select id="f-end">${timeOptionsHTML(v.end)}</select>
+          <label>終了</label>
+          <div class="wheel" id="wheel-f-end"></div>
+          <input type="hidden" id="f-end">
         </div>
         <div class="field" id="time-break-field">
-          <label for="f-break">休憩</label>
-          <select id="f-break">${breakOptionsHTML(v.brk)}</select>
+          <label>休憩</label>
+          <div class="wheel" id="wheel-f-break"></div>
+          <input type="hidden" id="f-break">
         </div>
 
         <div class="field full" id="dur-field">
-          <label id="f-hours-label">働いた時間</label>
+          <label>働いた時間</label>
           <div class="time-inputs">
-            <select id="f-hours">${hoursOptionsHTML(v.hours)}</select>
+            <div class="wheel" id="wheel-f-hours"></div>
             <span>時間</span>
-            <select id="f-mins">${minsOptionsHTML(v.mins)}</select>
+            <div class="wheel" id="wheel-f-mins"></div>
             <span>分</span>
           </div>
+          <input type="hidden" id="f-hours">
+          <input type="hidden" id="f-mins">
         </div>
 
         <div class="field" id="wage-field">
@@ -322,6 +385,13 @@ function renderForm() {
 
   const form = card.querySelector("#entryForm");
   form.querySelector("#f-date").value = v.date;
+
+  // 回転ホイールを組み立てる(開始・終了・休憩・時間・分)
+  buildWheel(form.querySelector("#wheel-f-start"), form.querySelector("#f-start"), timeWheelOptions(), v.start);
+  buildWheel(form.querySelector("#wheel-f-end"), form.querySelector("#f-end"), timeWheelOptions(), v.end);
+  buildWheel(form.querySelector("#wheel-f-break"), form.querySelector("#f-break"), breakWheelOptions(), v.brk);
+  buildWheel(form.querySelector("#wheel-f-hours"), form.querySelector("#f-hours"), hoursWheelOptions(), v.hours);
+  buildWheel(form.querySelector("#wheel-f-mins"), form.querySelector("#f-mins"), minsWheelOptions(), v.mins);
 
   // 給与の種類・入力方法の初期選択と、切り替え時の表示更新
   for (const radio of form.querySelectorAll('input[name="payType"]')) {
@@ -369,6 +439,12 @@ function applyInputModeToForm(form) {
   form.querySelector("#time-end-field").style.display = isTime ? "" : "none";
   form.querySelector("#time-break-field").style.display = isTime ? "" : "none";
   form.querySelector("#dur-field").style.display = isTime ? "none" : "";
+  // 表示に切り替わったホイールは、非表示中は位置を合わせられないので今ここで合わせる
+  const visible = isTime ? ["wheel-f-start", "wheel-f-end", "wheel-f-break"] : ["wheel-f-hours", "wheel-f-mins"];
+  for (const id of visible) {
+    const w = form.querySelector("#" + id);
+    if (w && w._reposition) w._reposition();
+  }
 }
 
 // フォームの入力値から勤務時間・金額を読み取る(プレビューと保存で共用)

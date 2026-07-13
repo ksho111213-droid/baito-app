@@ -177,11 +177,70 @@ body {
   gap: 8px;
 }
 .time-inputs select { width: auto; flex: 1; }
+.time-inputs .wheel { flex: 1; }
 .time-inputs span {
   color: var(--text-muted);
   font-size: 0.85rem;
   white-space: nowrap;
 }
+
+/* --- 回転ホイール(Googleマップ風の時刻選択) --- */
+.wheel {
+  position: relative;
+  height: 102px;
+  overflow: hidden;
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.wheel-scroll {
+  height: 100%;
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  padding: 34px 0; /* 先頭・末尾も中央まで来られるようにする */
+}
+.wheel-scroll::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.wheel-item {
+  height: 34px;
+  line-height: 34px;
+  text-align: center;
+  scroll-snap-align: center;
+  font-size: 1rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: color 0.1s, font-size 0.1s;
+}
+.wheel-item.is-center {
+  color: var(--gold);
+  font-weight: 600;
+  font-size: 1.15rem;
+}
+.wheel-highlight {
+  position: absolute;
+  left: 8px; right: 8px;
+  top: 34px; height: 34px;
+  border-top: 0.5px solid var(--gold-dim);
+  border-bottom: 0.5px solid var(--gold-dim);
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 2;
+}
+/* 上下を少し暗くフェードして、回転している立体感を出す */
+.wheel::before, .wheel::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0;
+  height: 34px;
+  pointer-events: none;
+  z-index: 1;
+}
+.wheel::before { top: 0; background: linear-gradient(var(--surface-2), rgba(15,17,22,0)); }
+.wheel::after { bottom: 0; background: linear-gradient(rgba(15,17,22,0), var(--surface-2)); }
 
 /* 狭い画面(スマホ)ではフォームを1列にして各欄を広く使う */
 @media (max-width: 480px) {
