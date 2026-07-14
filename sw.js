@@ -6,7 +6,7 @@
 //   → 更新がすぐ反映され、電波がなくても動く。
 // ファイルを更新したら CACHE_VERSION の数字を上げること。
 
-const CACHE_VERSION = "baito-v9";
+const CACHE_VERSION = "baito-v10";
 const ASSETS = [
   "./",
   "./index.html",

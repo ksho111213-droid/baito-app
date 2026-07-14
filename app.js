@@ -46,12 +46,18 @@ function loadSettings() {
         lastDailyWage: Number(s.lastDailyWage) || 0,
         lastPayType: s.lastPayType === "daily" ? "daily" : "hourly",
         lastInputMode: s.lastInputMode === "duration" ? "duration" : "time",
+        // 前回入力した時刻・時間(次回の初期表示に使う)
+        lastStart: /^\d{2}:\d{2}$/.test(s.lastStart) ? s.lastStart : "",
+        lastEnd: /^\d{2}:\d{2}$/.test(s.lastEnd) ? s.lastEnd : "",
+        lastHours: Number(s.lastHours) || 0,
+        lastMins: Number(s.lastMins) || 0,
       };
     }
   } catch (e) { /* 壊れていたら初期値へ */ }
   return {
     defaultTransport: 0, defaultBreak: 0, lastWage: 0, lastDailyWage: 0,
     lastPayType: "hourly", lastInputMode: "time",
+    lastStart: "", lastEnd: "", lastHours: 0, lastMins: 0,
   };
 }
 function saveSettings(s) {
@@ -328,8 +334,9 @@ function renderForm() {
     date: todayStr(),
     payType: settings.lastPayType,
     inputMode: settings.lastInputMode,
-    start: "", end: "", brk: settings.defaultBreak || 0,
-    hours: 0, mins: 0,
+    // 開始・終了・時間は前回の記録を初期値にする(初回は空=未選択)
+    start: settings.lastStart || "", end: settings.lastEnd || "", brk: settings.defaultBreak || 0,
+    hours: settings.lastHours || 0, mins: settings.lastMins || 0,
     wage: settings.lastWage || "",
     dailyWage: settings.lastDailyWage || "",
     transport: settings.defaultTransport || 0,
@@ -587,6 +594,14 @@ function addEntryFromForm(form) {
   if (r.payType === "hourly") settings.lastWage = r.wage;
   else settings.lastDailyWage = r.dailyWage;
   settings.defaultTransport = r.transport;
+  // スクロールで入れた時刻・時間も前回値として覚えておく
+  if (r.inputMode === "time") {
+    settings.lastStart = r.startTime;
+    settings.lastEnd = r.endTime;
+  } else {
+    settings.lastHours = Math.floor(r.minutes / 60);
+    settings.lastMins = r.minutes % 60;
+  }
   saveSettings(settings);
 
   render(false); // フォームを初期状態に戻す
